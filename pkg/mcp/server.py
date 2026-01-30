@@ -50,55 +50,78 @@ initialize_clients()
 
 
 @app.tool()
-def current_metric_for_pods(
+def workload_metrics(
     metric_name: str = "container_cpu_usage_seconds_total",
-    pod_names: Optional[List[str]] = None
+    workload_name: Optional[str] = None,   
+    pod_names: Optional[List[str]] = None,
+    time_window: Optional[str] = None,     
+    aggregation: str = "avg"               
 ) -> Dict[str, Any]:
     """
-    Get the current CPU usage for a list of pods directly using Prometheus query.
+    Query workload-level gauge metrics from Prometheus.
+    - Gauge metrics only
+    - Aggregates across pods
+    - Optional time window support
     """
+
     if not prometheus_clients:
         return {"error": "Prometheus client not initialized"}
-    
-    if not pod_names:
-        return {"error": "No pods provided"}
-    
-    results = []
-    all_results = {}
-    for prom_name, client in prometheus_clients.items():
-        results = []
-        try:
-            for pod_name in pod_names:
-                # PromQL query for the given pod
-                query = f"{metric_name}{{pod='{pod_name}'}}"
-                
-                # Query Prometheus for current value
-                response = client.custom_query(query=query)
-                
-                # Extract latest value if available
-                value = None
-                if response and len(response) > 0:
-                    try:
-                        value = float(response[0]['value'][1])
-                    except (KeyError, ValueError, IndexError):
-                        value = None
-                
-                results.append({
-                    "pod": pod_name,
-                    "query": query,
-                    "current_cpu_value": value
-                })  
-            
-        except Exception as e:
-            return {"error": f"Failed to query Prometheus: {str(e)}"}
 
-        all_results[prom_name] = results
+    if not workload_name:
+        return {"error": "workload_name (app label) must be provided"}
+
+    if aggregation not in {"avg", "max", "min", "sum"}:
+        return {"error": f"Invalid aggregation '{aggregation}'"}
+
+    
+    label_filters = [f'app="{workload_name}"']
+
+    if pod_names:
+        pod_regex = "|".join(pod_names)
+        label_filters.append(f'pod=~"{pod_regex}"')
+
+    label_selector = ",".join(label_filters)
+
+    
+    if time_window:
+        inner_expr = f"{aggregation}_over_time({metric_name}{{{label_selector}}}[{time_window}])"
+        query = f"{aggregation}({inner_expr})"
+        effective_window = time_window
+    else:
+        query = f"{aggregation}({metric_name}{{{label_selector}}})"
+        effective_window = "current"
+
+    all_results = {}
+
+    for prom_name, client in prometheus_clients.items():
+        try:
+            response = client.custom_query(query=query)
+
+            value = None
+            if response and len(response) > 0:
+                try:
+                    value = float(response[0]["value"][1])
+                except (KeyError, ValueError, IndexError):
+                    value = None
+
+            all_results[prom_name] = {
+                "query": query,
+                "value": value
+            }
+
+        except Exception as e:
+            return {"error": f"Failed to query Prometheus ({prom_name}): {str(e)}"}
 
     return {
-                "metric": metric_name,
-                "pods_current_cpu_per_prometheus": all_results,
-                "timestamp": datetime.now().isoformat()
-            }
+        "metric": metric_name,
+        "metric_type": "gauge",
+        "workload": workload_name,
+        "pods_filtered": pod_names or "ALL",
+        "aggregation": aggregation,
+        "time_window": effective_window,
+        "results": all_results,
+        "timestamp": datetime.now().isoformat()
+    }
 
     
 @app.tool()
