@@ -45,6 +45,7 @@ class Config:
                 self.scrape_interval = config.get('scrape_interval', 30)
                 self.batch_size = config.get('batch_size', 1000)
                 self.days_of_history = config.get('days_of_history', 365)
+                self.services = ['frontend', 'backend', 'payments', 'cache', 'auth', 'api']
         else:
             self.prometheus_url = prometheus_url or "http://localhost:9090/api/v1/write"
             self.auth_token = None
@@ -71,10 +72,49 @@ class KubernetesMetricsGenerator:
                           'app-backend', 'app-frontend', 'app-api', 'app-worker', 'app-scheduler']
         self.container_names = ['app', 'sidecar', 'init', 'proxy', 'metrics-exporter',
                                'log-collector', 'cache', 'database', 'queue', 'worker']
+        self.services = ['app', 'sidecar', 'init', 'proxy', 'metrics-exporter',
+                               'log-collector', 'cache', 'database', 'queue', 'worker']
 
     def _generate_cluster_names(self) -> List[str]:
         """Generate cluster names"""
         return [f"k8s-cluster-{i:03d}" for i in range(1, self.config.num_clusters + 1)]
+    
+    def generate_istio_metrics(self, timestamp: int, source_service: str, dest_service: str, labels: Dict[str, str]):
+        """Simulate Istio request metrics between services"""
+        metrics = []
+
+        # Total requests
+        total_requests = random.randint(0, 200)
+        metrics.append({
+            'metric': {**labels, '__name__': 'istio_requests_total',
+                    'source_workload': source_service,
+                    'destination_workload': dest_service},
+            'values': [float(total_requests)],
+            'timestamps': [timestamp]
+        })
+
+        # Error requests
+        error_requests = random.randint(0, 5)
+        metrics.append({
+            'metric': {**labels, '__name__': 'istio_requests_error_total',
+                    'source_workload': source_service,
+                    'destination_workload': dest_service},
+            'values': [float(error_requests)],
+            'timestamps': [timestamp]
+        })
+
+        # Latency histogram (simplified as avg)
+        latency = random.uniform(0.01, 0.5)  # seconds
+        metrics.append({
+            'metric': {**labels, '__name__': 'istio_request_duration_seconds',
+                    'source_workload': source_service,
+                    'destination_workload': dest_service},
+            'values': [latency],
+            'timestamps': [timestamp]
+        })
+
+        return metrics
+
 
     def _generate_node_name(self, cluster: str, node_id: int) -> str:
         """Generate node name"""
@@ -332,7 +372,10 @@ class KubernetesMetricsGenerator:
                         all_metrics.extend(self.generate_pod_metrics(timestamp, labels))
                         all_metrics.extend(self.generate_node_filesystem_metrics(timestamp, node_labels))
 
-
+        for source in self.services:
+            dest = random.choice([s for s in self.services if s != source])
+            all_metrics.extend(self.generate_istio_metrics(timestamp, source, dest, labels))
+        
         return all_metrics
 
 

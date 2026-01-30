@@ -66,13 +66,24 @@ async def ask_ollama(prompt: str, history="") -> str:
 
 async def llm_to_workflow(nl_query: str) -> list:
     print("Entering llm_to_workflow with query:", nl_query)
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get("http://localhost:8000/get_ocs_prompt")
+        resp.raise_for_status()
+        ocs_prompt: str = resp.text   # <-- stored as string
+
+    print("Fetched OCS context from the context provider")
+
+
     
     prompt = (
         "You are an assistant that converts natural language queries into a sequence of available MCP tool calls. "
         "Return ONLY JSON. Each step should include 'tool_name', 'params' (dictionary), "
         "arrange it in a logical flow of calls. Limit to a maximum of 3 calls and a minimum of 1 call\n"
-        "If there are params that cant be filled based on the info you have, make it empty string. Infer from the natural language query, what params can be filled I ""\n"
+        "If there are params that cant be filled based on the info you have, make it empty string""\n"
+        f"Proving a context specification from the context provider which is json format. Based on the natural language query, check which workload and metric is applicable along with other parameters from the specification to the workload call, which will be params to the tools. Compose the other tool calls based on the topology in the specification. the specification is {ocs_prompt} \n"
         "Available Tools:\n"
+        "- workload_metrics(metric_name: str = 'container_cpu_utilization',workload_name: Optional[str] = None, pod_names: Optional[List[str]] = None,time_window: Optional[str] = None, aggregation: str = 'avg')"             
         "- current_metric_for_pods(metric_name: str = 'container_cpu_usage_seconds_total',pod_names: Optional[List[str]] = None)\n"
         "- top_n_pods_by_metric(metric_name: str = 'container_cpu_usage_seconds_total', top_n: int = 5, window: str = '5m') \n"
         "- pods_exceeding_cpu(threshold: float = 0.8)\n"
@@ -83,7 +94,6 @@ async def llm_to_workflow(nl_query: str) -> list:
         "- pod_restart_trend(window: str = '30m', top_n: int = 5)\n"
         "- detect_pod_anomalies(metric_name='container_cpu_usage_seconds_total', z_threshold=3.0)\n"
         "- detect_crashloop_pods(window='10m', threshold=2)\n"
-        "- correlate_metrics(metric_a='container_cpu_usage_seconds_total', metric_b='container_network_receive_bytes_total', window='10m')\n"
         "- pod_event_timeline(pod_name: str, window: str = '30m')\n"
         "- node_condition_summary()\n"
         f"Natural language query: {nl_query}"
@@ -171,8 +181,8 @@ async def run_query(nl_query: str):
     for r in results:
         print(r)
 
-    
-    summary_prompt = f"Summarize these tool call results: {results}\nProvide a neat minimal summary."
+    print("OCS Prompt:", ocs_prompt)
+    summary_prompt = f"Summarize these tool call results: {results} \nProvide a neat minimal summary. Interpret based on the context specification provided and apply the policy in the specification to the results {ocs_prompt}"
     full_summary = ""
     async for chunk in ask_ollama_stream(summary_prompt):
         print(chunk, end="", flush=True)
@@ -182,6 +192,8 @@ async def run_query(nl_query: str):
 
 
 if __name__ == "__main__":
+    global ocs_prompt
+    ocs_prompt = ""
     context = ""
     while True:
         print("\nCurrent Context:", context)
