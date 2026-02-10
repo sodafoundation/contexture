@@ -63,22 +63,125 @@ def get_promql_from_ollama(question: str) -> tuple:
     full_response = response.json().get("response", "")
     logger.info(f"Ollama response: {full_response}\n\n")
 
+    # Try multiple patterns to extract PromQL
     match = re.search(PROMQL_PATTERN, full_response, re.DOTALL)
+    
     if not match:
-        logger.error("Ollama response did not contain a valid PromQL query")
-        raise ValueError("No valid PromQL found")
+        # Pattern: ```<optional_language>\n<query>\n```
+        match = re.search(r"```(?:\w+)?\s*\n(.*?)\n\s*```", full_response, re.DOTALL)
+    
+    if not match:
+        # Pattern without newlines: ```<optional_language><query>```
+        match = re.search(r"```(?:\w+)?\s*(.*?)\s*```", full_response, re.DOTALL)
+    
+    if not match:
+        # Try to find query between "query:" and newline or end
+        match = re.search(r"query:\s*([^\n]+)", full_response, re.IGNORECASE)
+    
+    if not match:
+        # Last resort: look for common PromQL patterns (functions with metrics)
+        match = re.search(r"((?:sum|avg|min|max|count|rate|increase|avg_over_time|sum_over_time|max_over_time|min_over_time)\s*\([^)]+\)(?:\s*(?:by|without)\s*\([^)]*\))?)", full_response, re.IGNORECASE)
+    
+    if not match:
+        logger.error(f"Ollama response did not contain a valid PromQL query. Full response:\n{full_response}")
+        raise ValueError(f"No valid PromQL found in response. Response length: {len(full_response)} chars")
 
     promql = match.group(1).strip()
+    
+    # Clean up language identifiers that might have been captured
+    promql = re.sub(r'^(promql|markdown|sql|python|bash)\s*\n', '', promql, flags=re.IGNORECASE)
+    
+    # Remove comments (# and everything after on the same line)
+    promql = re.sub(r'#.*', '', promql)
+    
+    # Clean up any square brackets or placeholder text that might have been included
+    promql = re.sub(r'^\s*\[\s*', '', promql)  # Remove leading [
+    promql = re.sub(r'\s*\]\s*$', '', promql)  # Remove trailing ]
+    promql = promql.strip()
+    
+    # Basic validation to catch common issues
+    if not promql:
+        logger.error("Extracted PromQL is empty")
+        raise ValueError("Empty PromQL query")
+    
+    # Check for common syntax errors
+    syntax_issues = []
+    
+    # Check for conflicting 'by' and 'without' modifiers
+    if re.search(r'\b(by|without)\s*\([^)]*\)\s*(by|without)\s*\(', promql, re.IGNORECASE):
+        syntax_issues.append("cannot use both 'by' and 'without' modifiers together")
+    
+    # Check for aggregation operators with incorrect syntax
+    aggregation_ops = ['sum', 'min', 'max', 'avg', 'count', 'stddev', 'stdvar', 'count_values', 'bottomk', 'topk', 'quantile']
+    for op in aggregation_ops:
+        # Pattern: aggregation operator followed by 'over' (incorrect)
+        if re.search(rf'\b{op}\s+over\s*\(', promql, re.IGNORECASE):
+            syntax_issues.append(f"'{op} over' detected - use '{op} by' or '{op} without' instead")
+            break
+        # Pattern: aggregation operator with grouping that doesn't use 'by' or 'without'
+        if re.search(rf'\b{op}\s+\w+\s*\(', promql, re.IGNORECASE):
+            # Check if it's not followed by 'by' or 'without'
+            if not re.search(rf'\b{op}\s+(by|without)\s*\(', promql, re.IGNORECASE):
+                match = re.search(rf'\b{op}\s+(\w+)\s*\(', promql, re.IGNORECASE)
+                if match and match.group(1).lower() not in ['by', 'without']:
+                    syntax_issues.append(f"aggregation operator '{op}' should be followed by 'by' or 'without', not '{match.group(1)}'")
+                    break
+    
+    if promql.count('(') != promql.count(')'):
+        syntax_issues.append("unbalanced parentheses")
+    
+    if promql.count('[') != promql.count(']'):
+        syntax_issues.append("unbalanced square brackets")
+    
+    if promql.count('{') != promql.count('}'):
+        syntax_issues.append("unbalanced curly braces")
+    
+    # Check for incomplete range vectors
+    if '[' in promql and not re.search(r'\[\d+[smhdwy]\]', promql):
+        syntax_issues.append("potentially incomplete or invalid time range specification")
+    
+    # Check for range vectors used directly in aggregations (common error)
+    # Pattern: aggregation(metric[time]) - should be aggregation(function(metric[time]))
+    if re.search(r'\b(' + '|'.join(aggregation_ops) + r')\s*(?:by|without)?\s*\([^)]*\[[0-9]+[smhdwy]\]\s*\)', promql, re.IGNORECASE):
+        syntax_issues.append("range vector used directly in aggregation - wrap with rate(), avg_over_time(), or similar function first")
+    
+    # Check for over-time functions missing time ranges
+    over_time_funcs = ['avg_over_time', 'sum_over_time', 'min_over_time', 'max_over_time', 
+                       'count_over_time', 'stddev_over_time', 'stdvar_over_time', 'last_over_time',
+                       'present_over_time', 'quantile_over_time']
+    for func in over_time_funcs:
+        # Check if function is used but NOT followed by a range vector
+        if re.search(rf'\b{func}\s*\([^)]*\)', promql, re.IGNORECASE):
+            # Check if there's NO time range inside
+            if not re.search(rf'\b{func}\s*\([^)]*\[[0-9]+[smhdwy]\]', promql, re.IGNORECASE):
+                syntax_issues.append(f"'{func}' requires a range vector (e.g., metric[5m]) as argument")
+                break
+    
+    if syntax_issues:
+        logger.warning(f"Potential syntax issues detected in PromQL: {', '.join(syntax_issues)}")
+    
     logger.info(f"Extracted PromQL: {promql}")
     return promql, full_response
 
 # STEP 2: Run PromQL on Prometheus
 def query_prometheus(promql: str, prom_config: dict):
     logger.info(f"Querying Prometheus with: {promql}")
-
+    # Handle both direct config and prometheus_instances structure
+    if "prometheus_instances" in prom_config:
+        # Extract first instance from list
+        instance = prom_config["prometheus_instances"][0]
+        base_url = instance["base_url"]
+        disable_ssl = instance.get("disable_ssl", False)
+    else:
+        # Fallback logic: check for 'base_url', then 'prometheus_url', then 'url'
+        base_url = prom_config.get("base_url") or \
+                   prom_config.get("prometheus_url") or \
+                   prom_config.get("url")
+        disable_ssl = prom_config.get("disable_ssl", True)
+    
     prom = PrometheusConnect(
-        url=prom_config["base_url"],
-        disable_ssl=True
+        url=base_url,
+        disable_ssl=disable_ssl
     )
 
     try:

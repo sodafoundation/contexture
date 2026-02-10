@@ -85,11 +85,11 @@ Additional Information:
 {% endfor %}
 {% endif %}
 
-User question:
-{{ user_question }}
-
 {{ postamble }}
 {{ overrides_text }}
+
+Now process this user question and generate the PromQL query:
+{{ user_question }}
 """
         prompt = Template(template).render(
             system=self.sections.get("system", ""),

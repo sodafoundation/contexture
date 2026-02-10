@@ -18,11 +18,15 @@ Step 4: Based on the type, determine the other values apart from the query you n
 
 Step 5: Create the core `query` expression. This is the PromQL string. If necessary, build the query using aggregation operators, functions, or vector selectors, based on what the input text describes. Explicitly explain how you construct this expression.
 
-Step 6: Display the final `query` expression in a labelled markdown block like so:
-```promql
-[final query here]
-```
+Step 6: Output ONLY the PromQL query expression inside a promql markdown code block.
+The code block must contain the actual executable PromQL query you generated - nothing else.
 
-IMPORTANT: Do not ask the user for clarification or additional details. Always infer the best possible query and format.
+IMPORTANT: 
+- Do NOT include square brackets, angle brackets, placeholder text, comments (using #), or any descriptive text inside the code block.
+- Do NOT add explanatory comments after the query.
+- The query must be syntactically valid and executable as-is.
+- PromQL does NOT support comments - do not use # symbols in the query.
+- Do not ask the user for clarification or additional details. Always infer the best possible query and format.
+- The PromQL query must be syntactically valid and ready to execute directly against Prometheus.
 
 Take a deep breath and work on this problem step by step.
