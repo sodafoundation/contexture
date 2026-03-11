@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: contexture-prometheus
+    ports:
+      - "9090:9090"
+
+  mongodb:
+    image: mongo:6.0
+    container_name: contexture-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: contexture
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: contexture-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  ocs-engine:
+    build: .
+    container_name: contexture-ocs-engine
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+      - ./pkg/ocs/ocs_config.yaml:/app/pkg/ocs/ocs_config.yaml
+    depends_on:
+      - prometheus
+      - mongodb
+      - ollama
+    environment:
+      - PORT=8000
+      - MONGODB_URI=mongodb://mongodb:27017
+
+volumes:
+  ollama_data:

@@ -1,5 +1,5 @@
 prometheus_instances:
   - name: prometheus_1
-    base_url: "http://localhost:9090"
+    base_url: "http://prometheus:9090"
     headers: {}
     disable_ssl: false

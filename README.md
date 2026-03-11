@@ -75,6 +75,31 @@ OCS Defines the key attributes to build the operational context:
   - This tells the AI how to interpret the health of the metric.
   - Threshold, Polarity, Aggregation
 
+### Local Development Setup (Docker Compose)
+To quickly spin up a local development environment with all required components, you can use Docker Compose. This solves the issue of manually configuring Prometheus, MongoDB, Ollama, and the OCS Engine separately.
+
+Run the following command from the repository root:
+```bash
+docker compose up -d
+```
+
+#### What does this do?
+The docker-compose setup spins up the following services:
+- **Prometheus** (Port `9090`): A time-series database and monitoring system. Used to scrape metrics.
+- **MongoDB** (Port `27017`): Expected by the OCS engine for potential data storage operations. Starts with a database named `contexture`.
+- **Ollama** (Port `11434`): A local implementation for LLM endpoints, required by the context engine.
+- **OCS Engine** (Port `8000`): The core SODA Contexture Engine built from source (`pkg/ocs/main.go`).
+
+#### OCS Engine Inputs and Outputs
+The `ocs-engine` container exposes an HTTP server on port `8000` with the following key endpoints:
+
+1. **Input**: `GET /get_ocs_prompt`
+   - Collects OCS data and topology context to formulate a prompt for the AI agent to make inferences based on the fetched metrics.
+2. **Input**: `POST /collect_istio_metrics`
+   - Takes input to trigger data collection (e.g., from Prometheus) and parses it using the Open Context Specification to structure operational context.
+3. **Output**: `GET /health`
+   - Returns the health status of the context engine. Used to verify the system is up and running.
+
 ### Progress 
 We are actively developing the project. So if you would like to join the design, OCS and other components, please join us!
 
