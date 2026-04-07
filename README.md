@@ -92,6 +92,7 @@ We are actively developing the project. So if you would like to join the design,
   - [SODA Slack](https://sodafoundation.slack.com)
   - [OCS RFC] (https://docs.google.com/document/d/1XHN8NuXTPqKWOikFALfCTZHt6JCDpsHS)
 
+
 ## Local Setup & Execution Guide
 
 This guide walks you through the steps required to set up and run the Soda Contexture codebase locally.
