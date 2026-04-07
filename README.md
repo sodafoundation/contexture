@@ -91,3 +91,167 @@ We are actively developing the project. So if you would like to join the design,
   - [GitHub](https://github.com/sodafoundation/contexture)
   - [SODA Slack](https://sodafoundation.slack.com)
   - [OCS RFC] (https://docs.google.com/document/d/1XHN8NuXTPqKWOikFALfCTZHt6JCDpsHS)
+
+## Local Setup & Execution Guide
+
+This guide walks you through the steps required to set up and run the Soda Contexture codebase locally.
+
+---
+
+## Prerequisites
+
+Ensure the following services are installed and running before proceeding:
+
+- **Prometheus**  
+  A running instance of Prometheus is required.  
+  [Official Getting Started Guide](https://prometheus.io/docs/prometheus/latest/getting_started/)
+
+- **Ollama**  
+  A running Ollama instance is required.  
+  [Installation Guide](https://docs.ollama.com/)
+
+- **Model Setup**  
+  Download a model in Ollama (example):  
+  ```bash
+  ollama pull qwen2.5-coder:7b
+  ```  
+  You can pull any model suitable for your system (considering RAM, compute, and response time). Larger models may be slow or fail to run on machines with limited resources, so choose a smaller or lighter model if needed (for example, `qwen2:0.5b` or another smaller variant).
+
+---
+
+## Step 1: Create a Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+It is recommended to use a stable Python version (for example, Python 3.12) because some dependencies may not install correctly on very recent or development versions (such as Python 3.14). On Windows with multiple Python versions, you can create the environment like:
+
+```bash
+py -3.12 -m venv .venv
+```
+---
+
+## Step 2: Activate the Virtual Environment
+
+- **Windows:**  
+  ```bash
+  .venv\Scripts\activate
+  ```
+
+- **Mac / Linux:**  
+  ```bash
+  source .venv/bin/activate
+  ```
+
+---
+
+## Step 3: Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Step 4: Onboarding (Dynamic Prompt Mode)
+
+Before running the CLI, you must generate embeddings for your metrics:
+
+```bash
+python pkg/copilot/DP_logic/DynamicPrompt/onboarding_cli.py
+```
+
+During execution: enter the path to your metrics file (for example: `config/metrics.txt`), or press `Enter` to use the default path.
+
+Embeddings will be created in:  
+`config/embeddings/`
+
+---
+
+## Step 5: Configuration
+
+### Ollama Configuration
+
+Edit `ollama_config.yaml` and set the host where Ollama is running:
+
+```yaml
+host: "http://localhost:11434/api/generate"
+```
+
+### Prometheus Configuration
+
+Edit `prometheus_config.yaml` and set the Prometheus URL:
+
+```yaml
+prometheus_url: "http://localhost:9090"
+```
+
+### DP Logic Configuration
+
+In `pkg/copilot/DP_logic/dp_logic.py`, also make sure the Ollama configuration and the model you are using, as well as the Prometheus URL, are correctly set. For example:
+
+```python
+OLLAMA_URL = OLLAMA_CONFIG.get("ollama_url", "http://localhost:11434/api/generate")
+OLLAMA_MODEL = OLLAMA_CONFIG.get("ollama_model", "qwen2:0.5b")
+```
+
+For Prometheus, ensure the connection URL is set correctly:
+
+```python
+prom = PrometheusConnect(
+    url="http://localhost:9090",
+)
+```
+
+### Environment Variables
+
+Create a `.env` file and add the following (use absolute paths):
+
+```bash
+EMBEDDING_PATH="/absolute/path/to/ts-ai-agent/pkg/copilot/DP_logic/DynamicPrompt/config/embeddings/embeddings.npz"
+TEMPLATE_PATH="/absolute/path/to/ts-ai-agent/pkg/copilot/DP_logic/DynamicPrompt/config/template_sections"
+OVERRIDE_PATH="/absolute/path/to/ts-ai-agent/pkg/copilot/DP_logic/DynamicPrompt/config/overrides.json"
+EXAMPLES_PATH="/absolute/path/to/ts-ai-agent/pkg/copilot/DP_logic/DynamicPrompt/config/golden_examples.json"
+INFO_PATH="/absolute/path/to/ts-ai-agent/pkg/copilot/DP_logic/DynamicPrompt/config/additional_context.json"
+```
+
+---
+
+## Step 6: Running the CLI
+
+Run the CLI with a query set:
+
+```bash
+python pkg/cli.py \
+  --query-set test/query_sets/example1.yaml \
+  --copilot DYNAMIC_PROMPT \
+  --prometheus-config config/prometheus_config.yaml
+```
+
+---
+
+## Step 7: Query Set Format
+
+Example YAML query file:
+
+```yaml
+queries:
+  - "Which cluster has highest CPU utilisation?"
+  - "Which cluster has the highest memory allocation?"
+```
+
+---
+
+## Step 8: Output Format
+
+Results are generated as YAML files in the `output/` directory:
+
+```yaml
+"Your question here":
+  final: "Final human-readable summary or conclusion"
+  ollama_response: "Detailed step-by-step reasoning or intermediate generation from LLM"
+  promql: "raw PromQL query"
+  result: "Output results of PromQL execution"
+  error: "Optional error message if something went wrong"
+```
