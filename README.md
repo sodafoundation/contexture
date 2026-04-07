@@ -116,7 +116,7 @@ Ensure the following services are installed and running before proceeding:
   ```bash
   ollama pull qwen2.5-coder:7b
   ```  
-  You can pull any model suitable for your system (considering RAM, compute, and response time). Larger models may be slow or fail to run on machines with limited resources, so choose a smaller or lighter model if needed (for example, `qwen2:0.5b` or another smaller variant).
+  You can pull any model suitable for your system (considering RAM, compute, and response time). Larger models may be slow or fail to run on machines with limited resources, so choose a smaller or lighter model if needed (for example, `qwen2.5-coder:3b` or `qwen2:0.5b` or another smaller variant).
 
 ---
 
