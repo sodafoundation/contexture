@@ -723,7 +723,6 @@ The adjacency list is stored in the `workload_adjacency` collection:
 - Ensure `workload` list is populated in `ocs_config.yaml`
 - Check YAML syntax is correct
 
-## Development Utilities(Optional)
 ## Prometheus Data Generator for Kubernetes Clusters
 Prometheus High-Cardinality Data Generator for Kubernetes Clusters
 This script generates and pushes high-cardinality time-series data to Prometheus
