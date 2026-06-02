@@ -22,14 +22,14 @@ type AdjacencyListDocument struct {
 	TotalConnections int                 `bson:"total_connections"`
 }
 
-// Repository handles MongoDB operations for topology storage
-type Repository struct {
+// MongoRepository handles MongoDB operations for topology storage
+type MongoRepository struct {
 	client     *mongo.Client
 	collection *mongo.Collection
 }
 
-// NewRepository creates a new MongoDB repository
-func NewRepository() (*Repository, error) {
+// NewMongoRepository creates a new MongoDB-backed store
+func NewMongoRepository() (*MongoRepository, error) {
 	mongoURI := os.Getenv("MONGODB_URI")
 	if mongoURI == "" {
 		mongoURI = "mongodb://localhost:27017/"
@@ -55,14 +55,14 @@ func NewRepository() (*Repository, error) {
 	collection := client.Database(dbName).Collection("workload_adjacency")
 	log.Printf("Connected to MongoDB: %s, database: %s", mongoURI, dbName)
 
-	return &Repository{
+	return &MongoRepository{
 		client:     client,
 		collection: collection,
 	}, nil
 }
 
 // Close closes the MongoDB connection
-func (r *Repository) Close() error {
+func (r *MongoRepository) Close() error {
 	if r.client != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -72,7 +72,7 @@ func (r *Repository) Close() error {
 }
 
 // GetLatestAdjacencyList returns the most recent adjacency list
-func (r *Repository) GetLatestAdjacencyList() (map[string][]string, error) {
+func (r *MongoRepository) GetLatestAdjacencyList() (map[string][]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -90,7 +90,7 @@ func (r *Repository) GetLatestAdjacencyList() (map[string][]string, error) {
 }
 
 // SaveAdjacencyList persists an adjacency list and returns its document ID
-func (r *Repository) SaveAdjacencyList(adjacencyList map[string][]string) (primitive.ObjectID, error) {
+func (r *MongoRepository) SaveAdjacencyList(adjacencyList map[string][]string) (primitive.ObjectID, error) {
 	totalConnections := 0
 	for _, dests := range adjacencyList {
 		totalConnections += len(dests)

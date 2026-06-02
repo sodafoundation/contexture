@@ -18,9 +18,9 @@ The OCS Server provides:
 ## Prerequisites
 
 - Go 1.21 or higher
-- MongoDB (running locally or accessible via `MONGODB_URI`)
-- Prometheus (with Istio metrics exposed)
-- Access to Prometheus API endpoint
+- MongoDB (running locally or accessible via `MONGODB_URI`), or `MONGODB_URI=memory` for dev
+- **Istio connector (default):** Prometheus with Istio metrics
+- **ClickHouse connector:** ClickHouse with topology table — see [docs/CLICKHOUSE.md](../../docs/CLICKHOUSE.md)
 
 ## Installation
 
@@ -83,7 +83,17 @@ prometheus_instances:
 
 ## Running the Server
 
-### Development Mode
+### ClickHouse connector
+
+```bash
+export CONNECTOR=clickhouse
+export MONGODB_URI=memory   # optional: skip MongoDB for local dev
+go run ./pkg/ocs/
+```
+
+Load sample data: `docker compose run --rm clickhouse-init` (requires Docker).
+
+### Development Mode (Istio / Prometheus, default)
 
 ```bash
 # Run all files in the package

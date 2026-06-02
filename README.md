@@ -81,7 +81,7 @@ OCS Defines the key attributes to build the operational context:
 - postgres - developing
 - ceph - analysing
 - s3 - analysing
-- clickhouse - analysing
+- clickhouse - supported (topology from ClickHouse tables; set `CONNECTOR=clickhouse`)
 - ? [Please suggest]
 #### Supported Context Providers
 - istio

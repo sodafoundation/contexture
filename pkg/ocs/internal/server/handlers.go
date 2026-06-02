@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -11,6 +12,11 @@ import (
 	connectors "github.com/contexture/ocs/pkg/ocs/topology"
 	"github.com/gin-gonic/gin"
 )
+
+// connectorPinger is implemented by connectors that support a live health ping.
+type connectorPinger interface {
+	Ping(ctx context.Context) error
+}
 
 // GetOCSPromptHandler handles GET /get_ocs_prompt
 func (s *Server) GetOCSPromptHandler(c *gin.Context) {
@@ -96,11 +102,26 @@ func (s *Server) CollectTopologyHandler(c *gin.Context) {
 
 // HealthCheckHandler handles GET /health
 func (s *Server) HealthCheckHandler(c *gin.Context) {
+	status := "healthy"
+	connectorOK := s.connector != nil
+	dataSourceOK := true
+
+	if p, ok := s.connector.(connectorPinger); ok {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+		defer cancel()
+		if err := p.Ping(ctx); err != nil {
+			status = "degraded"
+			dataSourceOK = false
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "healthy",
-		"connector": s.connector != nil,
-		"mongodb":   s.store != nil,
-		"timestamp": time.Now().Format(time.RFC3339),
+		"status":            status,
+		"connector":         s.connector.Name(),
+		"connector_active":  connectorOK,
+		"datasource_healthy": dataSourceOK,
+		"mongodb":           s.store != nil,
+		"timestamp":         time.Now().Format(time.RFC3339),
 	})
 }
 

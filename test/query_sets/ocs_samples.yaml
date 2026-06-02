@@ -1,0 +1,35 @@
+# Sample queries for the OCS backend (ClickHouse or Istio connector).
+# Run: python3 scripts/run_sample_queries.py --mode ocs
+
+queries:
+  - name: service_info
+    type: http_get
+    path: /
+
+  - name: health_check
+    type: http_get
+    path: /health
+
+  - name: collect_topology_from_clickhouse
+    type: http_post
+    path: /collect_topology
+
+  - name: get_ocs_context
+    type: http_get
+    path: /get_ocs_prompt
+
+  - name: list_all_workloads
+    type: ocs_question
+    text: "List all configured workloads and their domains."
+
+  - name: frontend_dependencies
+    type: ocs_question
+    text: "What services does the frontend workload depend on?"
+
+  - name: backend_topology
+    type: ocs_question
+    text: "Show dependencies and dependents for the backend workload."
+
+  - name: cpu_metric_policy
+    type: ocs_question
+    text: "What CPU metric is monitored and what policy applies when it is too high?"

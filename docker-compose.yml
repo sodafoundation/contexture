@@ -1,0 +1,39 @@
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.3
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./scripts/clickhouse/init.sql:/init.sql:ro
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        clickhouse-client --host clickhouse --multiquery < /init.sql
+        echo "ClickHouse schema and sample topology loaded"

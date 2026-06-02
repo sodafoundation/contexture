@@ -1,0 +1,14 @@
+clickhouse_instances:
+  - name: default
+    host: localhost
+    port: 9000
+    database: default
+    username: default
+    password: ""
+    secure: false
+
+topology:
+  table: service_dependencies
+  source_column: source_workload
+  destination_column: destination_workload
+  time_column: event_time
