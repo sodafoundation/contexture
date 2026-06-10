@@ -1,2 +1,2 @@
-ollama_url: "http://localhost:11434/api/generate"
+ollama_url: "http://[IP_ADDRESS]:11434"
 ollama_model: "qwen2.5-coder:14b"
