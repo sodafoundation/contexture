@@ -1,0 +1,8 @@
+clickhouse_instances:
+  - name: local
+    host: "localhost"
+    port: 9000
+    database: "default"
+    username: "default"
+    password: ""
+    secure: false

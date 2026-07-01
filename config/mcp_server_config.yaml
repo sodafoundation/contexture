@@ -1,1 +1,2 @@
 mcp_server_url: "http://localhost:8001/mcp"
+clickhouse_mcp_url: "http://localhost:8004/mcp"

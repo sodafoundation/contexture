@@ -1,0 +1,77 @@
+========================================================================
+  CLICKHOUSE E-COMMERCE OCS TEST REPORT
+  Application: E-commerce
+  Generated: 2026-06-22 20:36:00
+========================================================================
+
+OCS SCHEMA VERIFICATION
+------------------------------------------------------------------------
+  Database             : ecommerce
+  Engine               : MergeTree
+  Schema Status        : ✅ DEFINED AND VERIFIED
+
+TABLES USED
+------------------------------------------------------------------------
+  1. customers
+     Fields: customer_id (UInt32), name (String), email (String), city (String)
+     Rows Loaded: 5
+
+  2. products
+     Fields: product_id (UInt32), name (String), category (String),
+             price (Float64), stock (UInt32)
+     Rows Loaded: 5
+
+  3. orders
+     Fields: order_id (UInt32), customer_id (UInt32), product_id (UInt32),
+             quantity (UInt32), order_date (Date)
+     Rows Loaded: 7
+
+RELATIONSHIPS
+------------------------------------------------------------------------
+  customers → orders → products
+  Linked via: customer_id, product_id
+  Join Type : INNER JOIN
+  Status    : ✅ WORKING
+
+SAMPLE QUERY VERIFIED
+------------------------------------------------------------------------
+  Query: "What products did Rahul buy?"
+
+  Result:
+  ┌──────────┬─────────┬──────┬────────────┐
+  │ Customer │ Product │ Qty  │ Order Date │
+  ├──────────┼─────────┼──────┼────────────┤
+  │ Rahul    │ Laptop  │   1  │ 2026-06-15 │
+  │ Rahul    │ Mouse   │   2  │ 2026-06-16 │
+  └──────────┴─────────┴──────┴────────────┘
+
+  Status: ✅ VERIFIED
+
+ALL CUSTOMER-PRODUCT RELATIONSHIPS
+------------------------------------------------------------------------
+  ┌─────────┬────────────┬─────────────┬─────┬────────────┬──────────────┐
+  │ Customer│ Product    │ Category    │ Qty │ Unit Price │ Total Amount │
+  ├─────────┼────────────┼─────────────┼─────┼────────────┼──────────────┤
+  │ Amit    │ Notebook   │ Stationery  │   5 │     200.00 │      1000.00 │
+  │ Priya   │ Keyboard   │ Electronics │   1 │    3000.00 │      3000.00 │
+  │ Priya   │ Headphones │ Electronics │   1 │    5000.00 │      5000.00 │
+  │ Rahul   │ Laptop     │ Electronics │   1 │   75000.00 │     75000.00 │
+  │ Rahul   │ Mouse      │ Electronics │   2 │    1500.00 │      3000.00 │
+  │ Sneha   │ Laptop     │ Electronics │   1 │   75000.00 │     75000.00 │
+  │ Vikram  │ Mouse      │ Electronics │   3 │    1500.00 │      4500.00 │
+  └─────────┴────────────┴─────────────┴─────┴────────────┴──────────────┘
+
+  Status: ✅ ALL RELATIONSHIPS VERIFIED
+
+SUMMARY
+------------------------------------------------------------------------
+  Tables Created       : 3/3  ✅
+  Sample Data Loaded   : 17 rows (5 + 5 + 7)  ✅
+  Schema Relationships : customers → orders → products  ✅
+  Sample Query         : "What products did Rahul buy?" → Laptop, Mouse  ✅
+  Overall Status       : ✅ PASSED
+
+  Rows and columns are loaded and schema relationships are
+  working successfully.
+
+========================================================================
