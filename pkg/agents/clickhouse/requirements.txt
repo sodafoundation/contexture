@@ -1,0 +1,4 @@
+# Match versions from the project root requirements.txt where applicable.
+fastmcp==0.2.0
+clickhouse-driver>=0.2.6,<0.3.0
+PyYAML==6.0.2
