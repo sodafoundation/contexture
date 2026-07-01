@@ -37,8 +37,16 @@ server_config = load_config(os.path.join(config_base, "mcp_server_config.yaml"))
 
 OLLAMA_API_URL = ollama_config.get("ollama_url")
 MODEL_NAME = ollama_config.get("ollama_model")
-# Renamed to mcp_client to avoid shadowing by the local httpx client inside llm_to_workflow
-mcp_client = Client(server_config.get("mcp_server_url", "http://localhost:8001/mcp"))
+
+# MCP clients — Prometheus (default) and ClickHouse
+prometheus_mcp_client = Client(server_config.get("mcp_server_url", "http://localhost:8001/mcp"))
+clickhouse_mcp_client = Client(server_config.get("clickhouse_mcp_url", "http://localhost:8004/mcp"))
+
+def _get_mcp_client_for_tool(tool_name: str) -> Client:
+    """Route tool calls: ch_* → ClickHouse MCP, everything else → Prometheus MCP."""
+    if tool_name.startswith("ch_"):
+        return clickhouse_mcp_client
+    return prometheus_mcp_client
 
 # Data Models
 class QueryRequest(BaseModel):
@@ -129,6 +137,7 @@ async def llm_to_workflow(nl_query: str) -> list:
         "- Use the specification's workload names and metrics; map synonyms (e.g. database, DB → db).\n\n"
         "If the user asks to explain/interpret policy (SLA, thresholds, what the policy means), include a call to explain_ocs_policy first.\n\n"
         "Available Tools:\n"
+        "\n--- Prometheus / Kubernetes Tools ---\n"
         "- explain_ocs_policy(config_path: str = 'pkg/ocs/ocs_config.yaml', output_format: str = 'bullets')\n"
         "- workload_metrics(metric_name: str = 'container_cpu_utilization', workload_name: Optional[str] = None, pod_names: Optional[List[str]] = None, time_window: Optional[str] = None, aggregation: str = 'avg')\n"
         "- top_n_pods_by_metric(metric_name: str = 'container_cpu_usage_seconds_total', top_n: int = 5, window: str = '5m')\n"
@@ -144,7 +153,16 @@ async def llm_to_workflow(nl_query: str) -> list:
         "- detect_pod_anomalies(metric_name='container_cpu_usage_seconds_total', z_threshold=3.0)\n"
         "- detect_crashloop_pods(window='10m', threshold=2)\n"
         "- pod_event_timeline(pod_name: str, window: str = '30m')\n"
-        "- node_condition_summary()\n\n"
+        "- node_condition_summary()\n"
+        "\n--- ClickHouse Database Tools (prefix: ch_) ---\n"
+        "- ch_list_databases()\n"
+        "- ch_list_tables(database: str = 'default')\n"
+        "- ch_describe_table(database: str, table: str)\n"
+        "- ch_execute_query(sql: str, limit: int = 100)\n"
+        "- ch_get_table_stats(database: str, table: str)\n"
+        "- ch_get_db_stats()\n"
+        "- ch_get_slow_queries(min_duration_ms: float = 100.0, limit: int = 10)\n"
+        "- ch_check_db_health()\n\n"
         f"Natural language query: {nl_query}"
     )
     llm_response = await ask_ollama(prompt)
@@ -167,7 +185,9 @@ async def execute_workflow(workflow: list) -> list:
     results = []
     history = ""
 
-    async with mcp_client:
+    # Open both MCP client sessions
+    async with prometheus_mcp_client:
+      async with clickhouse_mcp_client:
         for step in workflow:
 
             print("Executing step:", step)
@@ -212,7 +232,7 @@ async def execute_workflow(workflow: list) -> list:
            
             try:
                 print("Calling tool:", tool_name, "with params:", params)
-                result = await mcp_client.call_tool(tool_name, params)
+                result = await _get_mcp_client_for_tool(tool_name).call_tool(tool_name, params)
             except Exception as e:
                 result = {"error": str(e)}
 
