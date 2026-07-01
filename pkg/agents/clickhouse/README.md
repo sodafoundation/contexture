@@ -95,10 +95,22 @@ python server.py --transport sse --port 9000
 A ClickHouse instance is included in `docker-compose.yml` at the repo root:
 
 ```bash
-docker-compose up -d clickhouse
+docker-compose up -d
 ```
 
-Then initialise the schema:
+Verify ClickHouse is running:
+
+```bash
+docker exec contexture-clickhouse clickhouse-client --query "SELECT version()"
+```
+
+Then load the e-commerce schema and sample data:
+
+```bash
+docker exec -i contexture-clickhouse clickhouse-client < scripts/clickhouse/ecommerce_ocs_schema.sql
+```
+
+(Optional) Load the service-dependencies schema:
 
 ```bash
 docker exec -i contexture-clickhouse clickhouse-client < scripts/clickhouse/init.sql
