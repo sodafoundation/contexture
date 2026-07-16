@@ -1,0 +1,85 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SODA Contexture — ClickHouse Agent Stack
+#
+#  Services:
+#   1. clickhouse     — ClickHouse database server (port 9000 native, 8123 HTTP)
+#   2. clickhouse-mcp — FastMCP agent for ClickHouse (port 8004 SSE)
+#   3. clickhouse-init — One-shot container that runs init.sql to seed the schema
+#
+#  Usage:
+#    docker compose -f pkg/agents/clickhouse/docker-compose.yml up --build
+#    docker compose -f pkg/agents/clickhouse/docker-compose.yml down -v
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── 1. ClickHouse Database ─────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: contexture-clickhouse
+    ports:
+      - "9000:9000"    # Native TCP (used by clickhouse-driver)
+      - "8123:8123"    # HTTP interface
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # ── 2. Schema Init (one-shot) ──────────────────────────────────────────────
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: contexture-clickhouse-init
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ../../../scripts/clickhouse/init.sql:/init.sql:ro
+    command: >
+      sh -c "clickhouse-client --host clickhouse --port 9000
+             --user default --password ''
+             --multiquery < /init.sql
+             && echo 'Schema initialised successfully.'"
+    restart: on-failure
+
+  # ── 3. ClickHouse MCP Agent ────────────────────────────────────────────────
+  clickhouse-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contexture-clickhouse-mcp
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "8004:8004"    # FastMCP SSE endpoint — matches mcp_server_config.yaml
+    volumes:
+      - ../../../config:/config:ro     # Mount root config/ so agent finds clickhouse_config.yaml
+    environment:
+      # Override the YAML config host to use the Docker service name
+      CLICKHOUSE_HOST: clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  clickhouse-data:
+  clickhouse-logs:

@@ -27,9 +27,16 @@ def _load_config() -> List[Dict]:
 
 
 def _get_client(instance: Dict) -> clickhouse_driver.Client:
-    """Open a clickhouse-driver Client for a given config instance."""
+    """Open a clickhouse-driver Client for a given config instance.
+
+    When running inside Docker the CLICKHOUSE_HOST environment variable
+    takes precedence over the value in clickhouse_config.yaml so that
+    the agent can reach the clickhouse service by its Docker service name
+    rather than 'localhost'.
+    """
+    host = os.environ.get("CLICKHOUSE_HOST") or instance.get("host", "localhost")
     return clickhouse_driver.Client(
-        host=instance.get("host", "localhost"),
+        host=host,
         port=instance.get("port", 9000),
         user=instance.get("username", "default"),
         password=instance.get("password", ""),
