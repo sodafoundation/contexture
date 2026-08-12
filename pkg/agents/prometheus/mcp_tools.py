@@ -28,6 +28,8 @@ def workload_metrics_tool(
 ) -> Dict[str, Any]:
     if not workload_name:
         return {"error": "workload_name must be provided"}
+    if workload_name.startswith("workload-"):
+        workload_name = workload_name[len("workload-"):]
     if aggregation not in {"avg", "max", "min", "sum"}:
         return {"error": f"Invalid aggregation '{aggregation}'"}
 
@@ -478,9 +480,6 @@ def correlate_metrics_tool(
                 "pod_count": len(common),
             }
         except Exception as e:
-            results[name] = {"error": str(e)}
-    return results
-    except Exception as e:
             results[name] = {"error": str(e)}
     return results
 

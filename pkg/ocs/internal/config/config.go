@@ -10,9 +10,9 @@ import (
 
 // LoadOCS loads the OCS configuration from YAML file
 func LoadOCS() (*OCSConfig, error) {
-	configPath := filepath.Join(filepath.Dir(os.Args[0]), "pkg/ocs/ocs_config.yaml")
+	configPath := filepath.Join(filepath.Dir(os.Args[0]), "pkg/ocs/ocs_config_v2.yaml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		configPath = "pkg/ocs/ocs_config.yaml"
+		configPath = "pkg/ocs/ocs_config_v2.yaml"
 	}
 
 	data, err := os.ReadFile(configPath)

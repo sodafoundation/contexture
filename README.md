@@ -95,4 +95,74 @@ We are actively developing the project. So if you would like to join the design,
 ### How to join the development?
   - [GitHub](https://github.com/sodafoundation/contexture)
   - [SODA Slack](https://sodafoundation.slack.com) [Invite Link](https://join.slack.com/t/sodafoundation/shared_invite/zt-1lx91pho5-BHOJlGe7wtzZRRSRLwlvPQ)
-   
+
+---
+
+## ⚡ Quick Start: Integrated Launch Guide
+
+To bring up the entire integrated ecosystem (the Prometheus MCP Agent, the MongoDB database seeding, the UI Backend Gateway, and the React Web App) in the simplest way, follow these steps.
+
+### 1. One-Time Setup (Shared Virtual Environment)
+Instead of creating multiple python environments, create and activate a single shared virtual environment in the parent workspace directory:
+
+```bash
+cd "D:\Caze Labs\SodaFoundation"
+python -m venv venv
+
+# Activate (Linux/WSL: source venv/bin/activate | Windows: .\venv\Scripts\activate)
+source venv/bin/activate
+
+# Install all packages at once
+pip install -r contexture-fork/contexture/requirements.txt
+pip install -r contexture-ui/backend/requirements.txt python-dotenv
+```
+
+### 2. Seed MongoDB Context (Run once)
+Verify MongoDB is running on `localhost:27017` and seed the OCS context metadata from your static JSON file:
+
+```bash
+python contexture-fork/contexture/scratch/seed_mongo.py contexture-fork/contexture/generated_ocs_context.json
+```
+
+### 3. Launch the Services (Multi-terminal)
+Run the following processes concurrently (each terminal should have the shared virtual environment `venv` active):
+
+#### Terminal 1: Start Prometheus MCP Server (Port 8001)
+* **Linux/WSL**:
+  ```bash
+  export PYTHONPATH=contexture-fork/contexture/pkg/agents/prometheus
+  python contexture-fork/contexture/pkg/agents/prometheus/server.py --transport sse --port 8001
+  ```
+* **Windows (PowerShell)**:
+  ```powershell
+  $env:PYTHONPATH="contexture-fork/contexture/pkg/agents/prometheus"
+  python contexture-fork/contexture/pkg/agents/prometheus/server.py --transport sse --port 8001
+  ```
+
+#### Terminal 2: Start Copilot Backend (Port 8002)
+This runs the core reasoning client that coordinates with the MCP server:
+```bash
+cd contexture-fork/contexture
+python -m pkg.mcp.client_dynamic_ui
+```
+
+#### Terminal 3: Start UI Backend Gateway (Port 8003)
+Start the proxy gateway server on port 8003 (matching the React frontend configuration):
+* **Linux/WSL**:
+  ```bash
+  USE_REAL_AGENT=true TS_AGENT_PATH=$(pwd)/contexture-fork/contexture python contexture-ui/backend/main.py
+  ```
+* **Windows (PowerShell)**:
+  ```powershell
+  $env:USE_REAL_AGENT="true"; $env:TS_AGENT_PATH="$pwd\contexture-fork\contexture"; python contexture-ui/backend/main.py
+  ```
+
+#### Terminal 4: Start React Frontend (Port 5173)
+Start the web development server to view the interface:
+```bash
+cd contexture-ui/frontend
+npm install && npm run dev
+```
+
+Open your browser to `http://localhost:5173/` to run your queries!
+

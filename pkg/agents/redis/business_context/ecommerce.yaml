@@ -1,0 +1,27 @@
+entities:
+  user:
+    description: "A shopper account stored in Redis user hashes."
+  cart:
+    description: "Products currently selected for purchase."
+  wishlist:
+    description: "Products saved for later."
+  product:
+    description: "Catalog item metadata cached as serialized JSON."
+  purchase:
+    description: "Log entries representing completed checkouts."
+  order:
+    description: "Pending purchase orders awaiting queue processing."
+
+key_semantics:
+  "user:*": "Contains user details (name, email, age, status)."
+  "cart:user:*": "Represents products currently selected for purchase by a user."
+  "wishlist:user:*": "Represents products saved for later by a user."
+  "cache:product:*": "Cached product details including ID, name, and price stored as a JSON string."
+  "high_score_buyers": "A sorted set (zset) ranking users by their total purchase value (score represents total spent)."
+  "purchase_stream": "A stream logging purchase transactions including user_id, amount, and unix timestamp."
+  "order_queue": "A queue of order IDs awaiting processing."
+
+business_rules:
+  - "Only active users may checkout."
+  - "Orders are immutable after creation."
+  - "Cache keys have custom TTL bounds (e.g., 1800s to 3600s)."

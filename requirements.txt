@@ -34,3 +34,4 @@ PyYAML==6.0.2
 fastapi
 uvicorn
 pydantic
+pymongo

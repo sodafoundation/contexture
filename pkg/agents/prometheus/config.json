@@ -1,5 +1,5 @@
 {
-  "prometheus_url": "http://localhost:9090/api/v1/write",
+  "prometheus_url": "http://203.9.197.22:9090/api/v1/write",
   "auth_token": null,
   "num_clusters": 2,
   "nodes_per_cluster": 2,

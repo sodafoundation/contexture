@@ -1,6 +1,6 @@
 import os
 import sys
-import asyncio
+from contextlib import AsyncExitStack
 from typing import List, Dict, Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -18,21 +18,30 @@ class RedisMCPClient:
             env=os.environ.copy()
         )
         self._session = None
-        self._client_context = None
+        self._exit_stack = None
 
     async def __aenter__(self):
-        self._client_context = stdio_client(self.server_params)
-        read_stream, write_stream = await self._client_context.__aenter__()
-        self._session = ClientSession(read_stream, write_stream)
-        await self._session.__aenter__()
-        await self._session.initialize()
+        self._exit_stack = AsyncExitStack()
+        try:
+            read_stream, write_stream = await self._exit_stack.enter_async_context(
+                stdio_client(self.server_params)
+            )
+            self._session = await self._exit_stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await self._session.initialize()
+        except Exception:
+            await self._exit_stack.aclose()
+            self._exit_stack = None
+            self._session = None
+            raise
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._session:
-            await self._session.__aexit__(exc_type, exc_val, exc_tb)
-        if self._client_context:
-            await self._client_context.__aexit__(exc_type, exc_val, exc_tb)
+        if self._exit_stack:
+            await self._exit_stack.aclose()
+        self._session = None
+        self._exit_stack = None
 
     async def list_tools(self) -> List[Dict[str, Any]]:
         """List all available tools on the MCP server."""

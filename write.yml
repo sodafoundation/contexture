@@ -2,7 +2,7 @@ global:
   scrape_interval: 15s
 
 remote_write:
-  - url: "http://localhost:9090/api/v1/write"
+  - url: "http://203.9.197.22:9090/api/v1/write"
     queue_config:
       max_samples_per_send: 100000
       capacity: 100000

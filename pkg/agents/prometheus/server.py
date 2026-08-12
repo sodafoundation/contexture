@@ -406,6 +406,54 @@ def pod_status_summary() -> Dict[str, Any]:
 
 
 @app.tool()
+def list_all_pods(namespace: Optional[str] = None) -> Dict[str, Any]:
+    """
+    List all Kubernetes pods with their namespace, node, and phase.
+    Uses kube_pod_info to enumerate every pod in the cluster.
+
+    Args:
+        namespace: Optional namespace filter (e.g. 'default'). If empty, returns all namespaces.
+    """
+    all_results = {}
+    for inst in _instances():
+        name = inst["name"]
+        client = get_client(inst)
+        try:
+            if namespace:
+                query = f'kube_pod_info{{namespace="{namespace}"}}'
+            else:
+                query = "kube_pod_info"
+            result = client.custom_query(query=query)
+            pods = []
+            seen = set()
+            for item in result:
+                metric = item.get("metric", {})
+                pod_name = metric.get("pod", "")
+                if pod_name in seen:
+                    continue
+                seen.add(pod_name)
+                pods.append({
+                    "pod": pod_name,
+                    "namespace": metric.get("namespace", ""),
+                    "node": metric.get("node", ""),
+                    "created_by_kind": metric.get("created_by_kind", ""),
+                    "created_by_name": metric.get("created_by_name", ""),
+                })
+            pods.sort(key=lambda x: (x["namespace"], x["pod"]))
+            all_results[name] = {
+                "total_pods": len(pods),
+                "pods": pods,
+            }
+        except Exception as e:
+            all_results[name] = {"error": str(e)}
+
+    return {
+        "list_all_pods_per_prometheus": all_results,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.tool()
 def recent_pod_events(limit: int = 10) -> Dict[str, Any]:
     """
     Return the most recent Kubernetes pod events (by reason + object).
@@ -457,8 +505,14 @@ def node_disk_usage(window_minutes: int = 20) -> Dict[str, Any]:
         client = get_client(inst)
         try:
             query = '100 * (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}))'
+            
+            # Dynamically calculate step to avoid exceeding Prometheus limit of 11,000 points
+            step_size = "1m"
+            if window_minutes > 1000:
+                step_size = f"{max(1, window_minutes // 500)}m"
+
             result = client.custom_query_range(
-                query=query, start_time=start_time, end_time=end_time, step="1m"
+                query=query, start_time=start_time, end_time=end_time, step=step_size
             )
             disk_usage = []
             for item in result:
@@ -509,8 +563,14 @@ def node_memory_usage(window_minutes: int = 20) -> Dict[str, Any]:
         client = get_client(inst)
         try:
             query = "100 * (1 - ((node_memory_MemFree_bytes + node_memory_Buffers_bytes + node_memory_Cached_bytes) / node_memory_MemTotal_bytes))"
+            
+            # Dynamically calculate step to avoid exceeding Prometheus limit of 11,000 points
+            step_size = "1m"
+            if window_minutes > 1000:
+                step_size = f"{max(1, window_minutes // 500)}m"
+
             result = client.custom_query_range(
-                query=query, start_time=start_time, end_time=end_time, step="1m"
+                query=query, start_time=start_time, end_time=end_time, step=step_size
             )
             memory_usage = []
             for item in result:
@@ -892,6 +952,75 @@ def node_condition_summary() -> Dict[str, Any]:
     return {
         "node_condition_summary_per_prometheus": all_results,
         "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.tool()
+def query_custom_metric_range(metric_name: str, window: str = "30d", step: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Query any arbitrary Prometheus metric over a range window.
+
+    Args:
+        metric_name: The raw name of the Prometheus metric to query (e.g. 'kube_node_status_capacity_cpu_cores').
+        window: Range window lookback (e.g. '30d', '8w', '24h'). Default: '30d'.
+        step: Optional resolution step size (e.g. '1h'). If not provided, it is scaled dynamically.
+    """
+    import re
+    minutes = 43200
+    match = re.match(r"(\d+)([wdhm])", window.lower())
+    if match:
+        val = int(match.group(1))
+        unit = match.group(2)
+        if unit == "w":
+            minutes = val * 7 * 24 * 60
+        elif unit == "d":
+            minutes = val * 24 * 60
+        elif unit == "h":
+            minutes = val * 60
+        elif unit == "m":
+            minutes = val
+
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(minutes=minutes)
+
+    all_results = {}
+    for inst in _instances():
+        name = inst["name"]
+        client = get_client(inst)
+        try:
+            step_size = step
+            if not step_size:
+                step_size = "1m"
+                if minutes > 1000:
+                    step_size = f"{max(1, minutes // 500)}m"
+
+            result = client.custom_query_range(
+                query=metric_name, start_time=start_time, end_time=end_time, step=step_size
+            )
+            formatted_data = []
+            for item in result:
+                metric_labels = item.get("metric", {})
+                values = item.get("values", [])
+                if not values:
+                    continue
+                val_floats = [float(v[1]) for v in values]
+                formatted_data.append({
+                    "labels": metric_labels,
+                    "avg_value": round(sum(val_floats) / len(val_floats), 2),
+                    "min_value": round(min(val_floats), 2),
+                    "max_value": round(max(val_floats), 2),
+                    "latest_value": round(val_floats[-1], 2),
+                    "points_count": len(val_floats)
+                })
+            all_results[name] = formatted_data
+        except Exception as e:
+            all_results[name] = {"error": str(e)}
+
+    return {
+        "metric": metric_name,
+        "window": window,
+        "results": all_results,
+        "timestamp": datetime.now().isoformat()
     }
 
 

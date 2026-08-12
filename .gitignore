@@ -11,7 +11,7 @@ output/
 # Virtual environments
 .venv
 .env
-
+venv
 context.txt
 .contextignore
 context.txt.zip
@@ -19,7 +19,7 @@ context.txt.zip
 # Go binaries and archives
 *.tar.gz
 minio
-ocs
+
 
 # Runtime logs
 *.log

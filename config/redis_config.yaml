@@ -10,3 +10,22 @@ llm:
   model: ""
   api_key: ""
   base_url: ""
+
+ocs:
+  base_url: "http://localhost:8000"
+
+business_context:
+  path: "./business_context/ecommerce.yaml"
+
+sanitizer:
+  field_policies:
+    product:
+      category: "public"
+      aliases: ["product"]
+  sensitive_fields:
+    - "password"
+    - "token"
+    - "api_key"
+    - "secret"
+    - "email"
+    - "phone"

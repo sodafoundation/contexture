@@ -26,7 +26,9 @@ func main() {
 
 	router := gin.Default()
 	router.GET("/get_ocs_prompt", srv.GetOCSPromptHandler)
+	router.GET("/get_redis_context", srv.GetRedisContextHandler)
 	router.POST("/collect_istio_metrics", srv.CollectTopologyHandler)
+	router.POST("/collect_redis_context", srv.CollectRedisContextHandler)
 	router.GET("/health", srv.HealthCheckHandler)
 
 	port := os.Getenv("PORT")

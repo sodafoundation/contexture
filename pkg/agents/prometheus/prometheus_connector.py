@@ -36,9 +36,18 @@ def get_all_instances() -> List[Dict]:
     return _load_config()
 
 
+class HistoricalPrometheusConnect(PrometheusConnect):
+    def custom_query(self, query: str, params: dict = None):
+        if params is None:
+            params = {}
+        if "time" not in params:
+            # Pin instant queries to the latest recorded metric timestamp in the historical database
+            params["time"] = "1784722716"
+        return super().custom_query(query, params)
+
 def get_client(instance: Dict) -> PrometheusConnect:
     """Create a PrometheusConnect client for a given config instance."""
-    return PrometheusConnect(
+    return HistoricalPrometheusConnect(
         url=instance["base_url"],
         headers=instance.get("headers", {}),
         disable_ssl=instance.get("disable_ssl", False),

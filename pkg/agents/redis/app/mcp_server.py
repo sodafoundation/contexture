@@ -1,8 +1,10 @@
 import os
+import sys
 import yaml
 import redis
 import json
 import asyncio
+import re
 from typing import List, Dict, Any, Optional
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
@@ -96,6 +98,187 @@ def make_json_safe(val: Any) -> Any:
     elif isinstance(val, dict):
         return {make_json_safe(k): make_json_safe(v) for k, v in val.items()}
     return val
+
+def infer_key_pattern(key: str) -> str:
+    parts = key.split(":")
+    normalized = []
+    for part in parts:
+        if looks_dynamic_segment(part):
+            normalized.append("*")
+        else:
+            normalized.append(part)
+    return ":".join(normalized)
+
+def looks_dynamic_segment(part: str) -> bool:
+    """Return True if a colon-separated key segment looks like a dynamic
+    runtime value (ID, counter, hash) rather than a stable namespace label.
+
+    This heuristic is intentionally kept identical to the Go looksDynamic()
+    function in pkg/ocs/topology/redis/collector.go so that both the Go OCS
+    collector and this Python MCP discover_schema tool produce the same pattern
+    groupings for the same Redis keyspace.
+
+    Rules (evaluated in order):
+      1. Empty segment                            -> stable  (False)
+      2. Pure integer                             -> dynamic (e.g. "42", "1001")
+      3. UUID / long hex blob: [0-9a-fA-F-]{8,}  -> dynamic (e.g. UUIDs, short hashes)
+      4. Mixed alphanumeric >= 8 chars with at
+         least one digit                          -> dynamic (e.g. "prod001abc")
+      5. Otherwise                                -> stable  (e.g. "user",
+                                                              "user-profile",
+                                                              "session_store")
+    """
+    if not part:
+        return False
+    # Rule 2: pure integer
+    if part.isdigit():
+        return True
+    # Rule 3: UUID or long hex blob
+    if re.fullmatch(r"[0-9a-fA-F-]{8,}", part):
+        return True
+    # Rule 4: mixed alphanumeric ID (>= 8 chars, at least one digit)
+    if len(part) >= 8 and any(ch.isdigit() for ch in part):
+        return True
+    return False
+
+def looks_like_redis_key_reference(value: Any) -> bool:
+    return isinstance(value, str) and ":" in value and not value.startswith("{")
+
+def summarize_string_structure(raw_value: Optional[str]) -> Dict[str, Any]:
+    structure = {"encoding": "plain", "json_top_level_fields": []}
+    if raw_value is None:
+        return structure
+    try:
+        parsed = json.loads(raw_value)
+        if isinstance(parsed, dict):
+            structure["encoding"] = "json-object"
+            structure["json_top_level_fields"] = sorted(parsed.keys())
+        elif isinstance(parsed, list):
+            structure["encoding"] = "json-array"
+        else:
+            structure["encoding"] = f"json-{type(parsed).__name__}"
+    except Exception:
+        pass
+    return structure
+
+def summarize_key_structure(key: str, ktype: str) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {"key": key, "type": ktype}
+    ttl = redis_client.ttl(key)
+    summary["ttl_present"] = ttl is not None and ttl > 0
+
+    if ktype == "hash":
+        fields = sorted(list(redis_client.hkeys(key)))
+        summary["field_names"] = fields
+        summary["representative_structure"] = {"fields": fields}
+    elif ktype == "string":
+        raw_value = redis_client.get(key)
+        structure = summarize_string_structure(raw_value)
+        summary["representative_structure"] = structure
+    elif ktype == "list":
+        sample_items = redis_client.lrange(key, 0, 2)
+        key_refs = sorted({infer_key_pattern(item) for item in sample_items if looks_like_redis_key_reference(item)})
+        summary["list_length"] = redis_client.llen(key)
+        summary["representative_structure"] = {
+            "item_kind": "redis-key-reference" if key_refs else "scalar",
+            "referenced_patterns": key_refs,
+        }
+    elif ktype == "set":
+        sample_items = list(redis_client.sscan_iter(key, count=3))
+        sample_items = sample_items[:3]
+        key_refs = sorted({infer_key_pattern(item) for item in sample_items if looks_like_redis_key_reference(item)})
+        summary["cardinality"] = redis_client.scard(key)
+        summary["representative_structure"] = {
+            "member_kind": "redis-key-reference" if key_refs else "scalar",
+            "referenced_patterns": key_refs,
+        }
+    elif ktype == "zset":
+        sample_items = redis_client.zrange(key, 0, 2, withscores=True, desc=True)
+        key_refs = sorted({infer_key_pattern(member) for member, _ in sample_items if looks_like_redis_key_reference(member)})
+        summary["cardinality"] = redis_client.zcard(key)
+        summary["representative_structure"] = {
+            "member_kind": "redis-key-reference" if key_refs else "scalar",
+            "has_scores": True,
+            "referenced_patterns": key_refs,
+        }
+    elif ktype == "stream":
+        sample_entries = redis_client.xrange(key, count=1)
+        field_names = []
+        if sample_entries:
+            _, fields = sample_entries[0]
+            field_names = sorted(list(fields.keys()))
+        summary["entry_count"] = redis_client.xlen(key)
+        summary["representative_structure"] = {"field_names": field_names}
+    else:
+        summary["representative_structure"] = {}
+
+    return summary
+
+def merge_group_metadata(group: Dict[str, Any], sample_summary: Dict[str, Any]) -> None:
+    if sample_summary.get("ttl_present"):
+        group["ttl_present"] = True
+
+    structure = sample_summary.get("representative_structure", {})
+    if group["type"] == "hash":
+        group.setdefault("field_names", set()).update(structure.get("fields", []))
+    elif group["type"] == "string":
+        encodings = group.setdefault("string_encodings", set())
+        encoding = structure.get("encoding")
+        if encoding:
+            encodings.add(encoding)
+        group.setdefault("json_top_level_fields", set()).update(structure.get("json_top_level_fields", []))
+    elif group["type"] in {"list", "set", "zset"}:
+        group.setdefault("referenced_patterns", set()).update(structure.get("referenced_patterns", []))
+    elif group["type"] == "stream":
+        group.setdefault("stream_field_names", set()).update(structure.get("field_names", []))
+
+def infer_logical_description(pattern: str, ktype: str, group: Dict[str, Any]) -> str:
+    parts = [f"Redis {ktype} keyspace"]
+    if group.get("ttl_present"):
+        parts.append("contains expiring keys")
+    if ktype == "hash" and group.get("field_names"):
+        parts.append("stores structured records")
+    elif ktype == "string" and "json-object" in group.get("string_encodings", set()):
+        parts.append("stores JSON-like document payloads")
+    elif ktype in {"set", "list", "zset"} and group.get("referenced_patterns"):
+        parts.append("appears to reference other Redis keyspaces")
+    elif ktype == "stream":
+        parts.append("captures append-only event records")
+    return "; ".join(parts)
+
+def infer_relationships(pattern_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    relationships = []
+    seen = set()
+    patterns = {record["pattern"] for record in pattern_records}
+
+    for record in pattern_records:
+        for referenced in record.get("referenced_patterns", []):
+            if referenced in patterns:
+                rel = (record["pattern"], referenced, "references keys in")
+                if rel not in seen:
+                    seen.add(rel)
+                    relationships.append({
+                        "from_pattern": record["pattern"],
+                        "to_pattern": referenced,
+                        "relationship": "references keys in",
+                    })
+
+        record_parts = set(record["pattern"].split(":"))
+        for candidate in pattern_records:
+            if candidate["pattern"] == record["pattern"]:
+                continue
+            candidate_parts = set(candidate["pattern"].split(":"))
+            shared = sorted((record_parts & candidate_parts) - {"*"})
+            if shared:
+                rel = (record["pattern"], candidate["pattern"], ",".join(shared))
+                if rel not in seen:
+                    seen.add(rel)
+                    relationships.append({
+                        "from_pattern": record["pattern"],
+                        "to_pattern": candidate["pattern"],
+                        "relationship": "shares namespace tokens",
+                        "shared_tokens": shared,
+                    })
+    return relationships
 
 server = Server("redis-mcp-server")
 
@@ -269,29 +452,68 @@ async def handle_call_tool(
                 
                 groups = {}
                 for k, ktype in zip(all_keys, types_res):
-                    if ":" in k:
-                        parts = k.rsplit(":", 1)
-                        pattern = parts[0] + ":*"
-                    else:
-                        pattern = k
+                    if ktype == "none":
+                        continue
+                    pattern = infer_key_pattern(k)
                     key_group = (pattern, ktype)
                     if key_group not in groups:
-                        groups[key_group] = {"count": 0, "samples": []}
+                        groups[key_group] = {
+                            "pattern": pattern,
+                            "type": ktype,
+                            "count": 0,
+                            "samples": [],
+                            "ttl_present": False,
+                            "field_names": set(),
+                            "json_top_level_fields": set(),
+                            "string_encodings": set(),
+                            "referenced_patterns": set(),
+                            "stream_field_names": set(),
+                        }
                     groups[key_group]["count"] += 1
                     if len(groups[key_group]["samples"]) < 3:
                         groups[key_group]["samples"].append(k)
+                        try:
+                            sample_summary = summarize_key_structure(k, ktype)
+                            merge_group_metadata(groups[key_group], sample_summary)
+                        except Exception:
+                            pass
                 
                 patterns = []
-                for (pattern, ktype), info in groups.items():
-                    patterns.append({
-                        "pattern": pattern,
-                        "type": ktype,
+                for (_, _), info in groups.items():
+                    record = {
+                        "pattern": info["pattern"],
+                        "type": info["type"],
                         "count": info["count"],
-                        "sample_keys": info["samples"]
-                    })
+                        "sample_keys": info["samples"],
+                        "ttl_present": info["ttl_present"],
+                        "field_names": sorted(info["field_names"]),
+                        "json_top_level_fields": sorted(info["json_top_level_fields"]),
+                        "referenced_patterns": sorted(info["referenced_patterns"]),
+                        "stream_field_names": sorted(info["stream_field_names"]),
+                        "string_encodings": sorted(info["string_encodings"]),
+                    }
+                    record["representative_structure"] = {
+                        "field_names": record["field_names"],
+                        "json_top_level_fields": record["json_top_level_fields"],
+                        "referenced_patterns": record["referenced_patterns"],
+                        "stream_field_names": record["stream_field_names"],
+                        "string_encodings": record["string_encodings"],
+                    }
+                    record["logical_description"] = infer_logical_description(record["pattern"], record["type"], record)
+                    patterns.append(record)
+                patterns.sort(key=lambda item: (item["pattern"], item["type"]))
             else:
                 patterns = []
-            res = json.dumps({"patterns": patterns})
+            relationships = infer_relationships(patterns)
+            res = json.dumps({
+                "patterns": patterns,
+                "relationships": relationships,
+                "summary": {
+                    "keys_scanned": len(all_keys),
+                    "pattern_count": len(patterns),
+                    "relationship_count": len(relationships),
+                }
+            })
         elif name == "inspect_key":
             key = arguments.get("key")
             if not redis_client.exists(key):
@@ -417,7 +639,19 @@ async def handle_call_tool(
         elif name == "scan_keys":
             pattern = arguments.get("pattern", "*")
             count = arguments.get("count", 100)
-            cursor, keys = redis_client.scan(cursor=0, match=pattern, count=count)
+            cursor = 0
+            keys = []
+            seen_keys = set()
+
+            while True:
+                cursor, batch = redis_client.scan(cursor=cursor, match=pattern, count=count)
+                for key in batch:
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        keys.append(key)
+                if cursor == 0:
+                    break
+
             res = json.dumps({"keys": keys, "cursor": cursor})
         else:
             raise ValueError(f"Unknown tool: {name}")
@@ -427,6 +661,12 @@ async def handle_call_tool(
         return [types.TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 async def main():
+    try:
+        redis_client.ping()
+    except Exception as e:
+        print(f"Failed to connect to Redis at {redis_host}:{redis_port}: {e}", file=sys.stderr)
+        sys.exit(1)
+
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,

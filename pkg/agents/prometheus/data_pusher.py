@@ -47,7 +47,7 @@ class Config:
                 self.days_of_history = config.get('days_of_history', 365)
                 self.services = ['frontend', 'backend', 'payments', 'cache', 'auth', 'api']
         else:
-            self.prometheus_url = prometheus_url or "http://localhost:9090/api/v1/write"
+            self.prometheus_url = prometheus_url or "http://203.9.197.22:9090/api/v1/write"
             self.auth_token = None
             self.num_clusters = 10
             self.nodes_per_cluster = 50

@@ -103,79 +103,72 @@ Ollama and MCP server URLs are configured in `config/ollama_config.yaml` and `co
 
 ---
 
-## Getting Started
+## Getting Started & Integrated Launch
 
-All commands below are run from the `pkg/agents/prometheus/` directory.
+To bring up the entire integrated ecosystem (the Prometheus MCP Agent, the MongoDB database seeding, the UI Backend Gateway, and the React Web App) in the simplest way, follow these steps.
 
-### 1. Install dependencies
-
-```bash
-cd pkg/agents/prometheus
-pip install -r requirements.txt
-```
-
-### 2. Configure Prometheus instances
+### 1. One-Time Setup (Shared Virtual Environment)
+Instead of creating multiple python environments, create and activate a single shared virtual environment in the parent workspace directory:
 
 ```bash
-vi ../../config/prometheus_config.yaml
+cd "D:\Caze Labs\SodaFoundation"
+python -m venv venv
+
+# Activate (Linux/WSL: source venv/bin/activate | Windows: .\venv\Scripts\activate)
+source venv/bin/activate
+
+# Install all packages at once
+pip install -r contexture-fork/contexture/requirements.txt
+pip install -r contexture-ui/backend/requirements.txt python-dotenv
 ```
 
-### 3. Test the connection
-
-Before starting the server, verify config and connectivity:
+### 2. Seed MongoDB Context (Run once)
+Verify MongoDB is running on `localhost:27017` and seed the OCS context metadata from your static JSON file. You can optionally specify a custom path to your context file (defaults to `generated_ocs_context.json`):
 
 ```bash
-python test_connection.py
+python contexture-fork/contexture/scratch/seed_mongo.py [custom_context_file.json]
 ```
 
-Expected output:
+### 3. Launch the Services (Multi-terminal)
+Run the following processes concurrently (each terminal should have the shared virtual environment `venv` active):
 
-```
-Loading prometheus_config.yaml...
-Found 1 instance(s): ['prometheus_1']
---------------------------------------------------
-Instance : prometheus_1
-URL      : http://localhost:9090
-SSL      : enabled
-Connection: OK
-Pod count : 42 (from kube_pod_info)
-Node count: 3 (from kube_node_info)
---------------------------------------------------
-All instances OK.
-```
+#### Terminal 1: Start Prometheus MCP Server (Port 8001)
+* **Linux/WSL**:
+  ```bash
+  export PYTHONPATH=contexture-fork/contexture/pkg/agents/prometheus
+  python contexture-fork/contexture/pkg/agents/prometheus/server.py --transport sse --port 8001
+  ```
+* **Windows (PowerShell)**:
+  ```powershell
+  $env:PYTHONPATH="contexture-fork/contexture/pkg/agents/prometheus"
+  python contexture-fork/contexture/pkg/agents/prometheus/server.py --transport sse --port 8001
+  ```
 
-### 4. Run the MCP server
-
-**stdio transport** (default):
-
+#### Terminal 2: Start Copilot Backend (Port 8002)
+This runs the core reasoning client that coordinates with the MCP server:
 ```bash
-python server.py
+python -m pkg.mcp.client_dynamic_ui
 ```
 
-**SSE/HTTP transport** (for use with `client_dynamic.py` or any HTTP MCP client):
+#### Terminal 3: Start UI Backend Gateway (Port 8003)
+Start the proxy gateway server on port 8003 (matching the React frontend configuration):
+* **Linux/WSL**:
+  ```bash
+  USE_REAL_AGENT=true TS_AGENT_PATH=$(pwd)/contexture-fork/contexture python contexture-ui/backend/main.py
+  ```
+* **Windows (PowerShell)**:
+  ```powershell
+  $env:USE_REAL_AGENT="true"; $env:TS_AGENT_PATH="$pwd\contexture-fork\contexture"; python contexture-ui/backend/main.py
+  ```
 
+#### Terminal 4: Start React Frontend (Port 5173)
+Start the web development server to view the interface:
 ```bash
-python server.py --transport sse --port 8001
+cd contexture-ui/frontend
+npm install && npm run dev
 ```
 
-### 5. Run the NL agent (keyword-based)
-
-For quick queries without Ollama:
-
-```bash
-python agent.py
-```
-
-Example queries: `cluster health`, `top cpu pods`, `disk pressure`, `crashloop pods`.
-
-### 6. Run the full LLM-based client
-
-For Ollama-powered natural language queries across any adaptor:
-
-```bash
-cd pkg/mcp
-python client_dynamic.py
-```
+Open your browser to `http://localhost:5173/` to run your natural language queries!
 
 ---
 

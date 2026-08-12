@@ -1,0 +1,116 @@
+# ==============================================================================
+# Open Context Specification (OCS) Configuration - V2 (Comprehensive Spec)
+# ==============================================================================
+
+# I. Identity & Origin (The "Who" and "Where")
+identity_and_origin:
+  provider_source: "Prometheus"
+  environment: "production"
+  namespace_domain: "k8s-cluster-01"
+
+# II. Dimensionality & Topology (The "Relationship")
+dimensionality_and_topology:
+  resource_type: "Pod"
+  parent_child_links:
+    parent: "node"
+    children: ["container"]
+  labels_tags:
+    app: "web-server"
+    region: "us-east-1"
+    tier: "frontend"
+
+# III, IV, & V: Metrics Specifications
+metrics:
+  - name: "container_cpu_usage_seconds_total"
+    # III. Metric Semantics
+    semantics:
+      descriptive_name: "Container CPU Usage Time"
+      unit: "seconds"
+      type: "counter"
+      description: "Cumulative CPU time consumed by the container in core-seconds"
+    # IV. Temporal Context
+    temporal:
+      granularity_resolution: "10-second intervals"
+      retention_policy: "15d"
+    # V. Operational Constraints
+    constraints:
+      thresholds:
+        warning: 80.0
+        critical: 90.0
+      polarity: "high_is_bad"
+      aggregator: "average"
+
+  - name: "container_memory_working_set_bytes"
+    semantics:
+      descriptive_name: "Container Memory Working Set"
+      unit: "bytes"
+      type: "gauge"
+      description: "Current memory working set of the container"
+    temporal:
+      granularity_resolution: "10-second intervals"
+      retention_policy: "15d"
+    constraints:
+      thresholds:
+        warning: 8589934592.0
+        critical: 9663676416.0
+      polarity: "high_is_bad"
+      aggregator: "max"
+
+  - name: "kube_node_status_capacity_cpu_cores"
+    semantics:
+      descriptive_name: "Node CPU Core Capacity"
+      unit: "cores"
+      type: "gauge"
+      description: "Total CPU cores capacity of the node"
+    temporal:
+      granularity_resolution: "10-second intervals"
+      retention_policy: "15d"
+    constraints:
+      thresholds:
+        warning: 8.0
+        critical: 16.0
+      polarity: "low_is_bad"
+      aggregator: "average"
+
+  - name: "node_memory_MemTotal_bytes"
+    semantics:
+      descriptive_name: "Node Total Memory Capacity"
+      unit: "bytes"
+      type: "gauge"
+      description: "Total memory capacity of the node in bytes"
+    temporal:
+      granularity_resolution: "10-second intervals"
+      retention_policy: "15d"
+    constraints:
+      thresholds:
+        warning: 8589934592.0
+        critical: 17179869184.0
+      polarity: "low_is_bad"
+      aggregator: "average"
+
+  - name: "kube_pod_container_status_restarts_total"
+    semantics:
+      descriptive_name: "Container Restarts Total"
+      unit: "restarts"
+      type: "counter"
+      description: "Total number of container restarts"
+    temporal:
+      granularity_resolution: "10-second intervals"
+      retention_policy: "15d"
+    constraints:
+      thresholds:
+        warning: 1.0
+        critical: 5.0
+      polarity: "high_is_bad"
+      aggregator: "max"
+
+workload:
+  - db
+  - backend
+  - frontend
+
+time_window_minutes: 600
+
+policy:
+  - "sla violation if container cpu usage rate exceeds 90% for 5 minutes"
+  - "sla violation if container memory working set exceeds 9GB"
