@@ -260,6 +260,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.transport == "sse":
-        app.run(transport="sse", port=args.port)
+        app.run(transport="sse", host="0.0.0.0", port=args.port)
     else:
         app.run()

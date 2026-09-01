@@ -1,113 +1,55 @@
 # ClickHouse MCP Agent
 
 A ClickHouse data-connector agent for [SODA Contexture](https://github.com/sodafoundation/contexture).  
-Exposes ClickHouse databases, tables, and query execution as MCP tools via [FastMCP](https://github.com/jlowin/fastmcp),
-following the same pattern as the PostgreSQL and MongoDB agents.
+Exposes ClickHouse databases, tables, and query execution as MCP tools via [FastMCP](https://github.com/jlowin/fastmcp).
 
 ---
 
-## File Structure
+## How to Run
 
-```
-pkg/agents/clickhouse/
-├── agent.py                  # Natural-language query router
-├── clickhouse_connector.py   # Low-level ClickHouse connection & queries
-├── mcp_tools.py              # Tool wrapper functions (callable without server)
-├── server.py                 # FastMCP server exposing all tools
-├── test_connection.py        # Quick connectivity test
-├── tool_registry.py          # Central TOOLS registry
-├── requirements.txt          # Python dependencies
-└── README.md                 # This file
+The easiest way to run the ClickHouse agent (including a local database, schema initialization, and the MCP agent itself) is using the provided Docker stack and `run.bat` launcher from the repository root.
 
-config/
-└── clickhouse_config.yaml    # ClickHouse instance connection settings
-```
+### 1. Start the Stack
 
----
-
-## Setup
-
-### 1. Install dependencies
+From the root of the repository, run:
 
 ```bash
-cd pkg/agents/clickhouse
-pip install -r requirements.txt
+.\run.bat up
 ```
 
-### 2. Configure ClickHouse connection
+This will:
+- Start a ClickHouse database on ports `9000` (native) and `8123` (HTTP).
+- Automatically seed the database with sample schemas (`ecommerce`, `metrics`, etc).
+- Build and start the `contexture-clickhouse-mcp` FastMCP agent on `http://localhost:8004/sse`.
 
-Edit `config/clickhouse_config.yaml` at the repo root:
+### 2. Verify and Test
 
-```yaml
-clickhouse_instances:
-  - name: local
-    host: "localhost"
-    port: 9000
-    database: "default"
-    username: "default"
-    password: ""
-    secure: false
-```
-
-### 3. Test the connection
+To verify the agent's internal routing logic is healthy, run:
 
 ```bash
-cd pkg/agents/clickhouse
-python test_connection.py
+.\run.bat test
 ```
 
----
+### 3. Interactive NL Chatbot
 
-## Running the MCP Server
+An interactive terminal-based Natural Language chatbot is provided in `scripts/clickhouse/chatbot.py`. It uses Ollama to translate natural language into SQL against the ClickHouse `ecommerce` schema, and routes it through the MCP Server.
+
+To use it, ensure the stack is running (`.\run.bat up`), then run:
 
 ```bash
-cd pkg/agents/clickhouse
-
-# stdio transport (default — for use with MCP clients)
-python server.py
-
-# SSE/HTTP transport on port 8004
-python server.py --transport sse
-
-# SSE on a custom port
-python server.py --transport sse --port 9000
+py scripts\clickhouse\chatbot.py
 ```
 
----
+**Try asking it:**
+- *"List all customers"*
+- *"What products did Rahul buy?"*
+- *"Total revenue per category"*
+- *"Top 3 customers by total spending"*
+- *"Which city has the most orders?"*
+- *"Average order value per customer"*
 
-## Available MCP Tools
-
-| Tool | Description |
-|---|---|
-| `ch_list_databases` | List all databases with engine info |
-| `ch_list_tables` | List tables in a database with row count and size |
-| `ch_describe_table` | Show columns, types, and storage info for a table |
-| `ch_execute_query` | Run a read-only SELECT query |
-| `ch_get_table_stats` | Storage stats: size, engine, partition/sorting keys |
-| `ch_get_db_stats` | Server-level metrics (connections, active queries) |
-| `ch_get_slow_queries` | Top slow queries from `system.query_log` (last 24h) |
-| `ch_check_db_health` | Version, uptime, connections, running queries |
-
----
-
-## Docker (local ClickHouse)
-
-A ClickHouse instance is included in `docker-compose.yml` at the repo root:
+### 4. Stop the Stack
 
 ```bash
-docker-compose up -d clickhouse
+.\run.bat down
 ```
-
-Then initialise the schema:
-
-```bash
-docker exec -i contexture-clickhouse clickhouse-client < scripts/clickhouse/init.sql
-```
-
----
-
-## See Also
-
-- [PostgreSQL Agent](../postgres/README.md)
-- [MongoDB Agent](../mongodb/README.md)
-- [ClickHouse Documentation](https://clickhouse.com/docs)
